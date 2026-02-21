@@ -70,13 +70,15 @@ app.get('/api/health', (req, res) => {
 });
 
 // ✅ Error Handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: process.env.NODE_ENV === 'production' ? 'Something went wrong!' : err.message,
-  });
-});
+app.use(
+  cors({
+    origin: [
+      'http://localhost:5173',
+      'https://smart-waste-management-for-sustaina-beryl.vercel.app'
+    ],
+    credentials: true,
+  })
+);
 
 // ✅ 404 Handler
 app.use('*', (req, res) => {
