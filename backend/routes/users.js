@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import User from '../models/User.js';
 import WasteReport from '../models/WasteReport.js';
 import { TrainingProgress } from '../models/Training.js';
@@ -9,19 +9,21 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// ✅ Ensure upload folder exists
-const uploadDir = 'uploads/avatars';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// ✅ Cloudinary config (set these in Vercel Environment Variables)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-// ✅ Multer setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${req.user._id}-${Date.now()}${ext}`);
-  }
+// ✅ Multer + Cloudinary storage (no local filesystem needed)
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'avatars',
+    allowed_formats: ['jpeg', 'jpg', 'png', 'gif'],
+    transformation: [{ width: 300, height: 300, crop: 'fill' }],
+  },
 });
 
 const upload = multer({
@@ -29,7 +31,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+    const ext = allowed.test(file.originalname.toLowerCase());
     const mime = allowed.test(file.mimetype);
     if (ext && mime) cb(null, true);
     else cb(new Error('Only image files are allowed'));
@@ -88,13 +90,15 @@ router.put('/profile', authenticate, upload.single('avatar'), async (req, res) =
     if (profile) user.profile = { ...user.profile, ...safeParse(profile) };
     if (preferences) user.preferences = { ...user.preferences, ...safeParse(preferences) };
 
-    // Avatar upload
+    // ✅ Avatar upload — delete old Cloudinary image, save new URL
     if (req.file) {
-      if (user.profile?.avatar) {
-        const oldPath = path.join(process.cwd(), user.profile.avatar);
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      // Delete old avatar from Cloudinary if it exists
+      if (user.profile?.avatarPublicId) {
+        await cloudinary.uploader.destroy(user.profile.avatarPublicId);
       }
-      user.profile.avatar = `/${uploadDir}/${req.file.filename}`;
+      // req.file.path = full Cloudinary URL, req.file.filename = public_id
+      user.profile.avatar = req.file.path;
+      user.profile.avatarPublicId = req.file.filename;
     }
 
     await user.save();
