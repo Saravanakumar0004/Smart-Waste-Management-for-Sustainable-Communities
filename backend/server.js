@@ -4,8 +4,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 // Routes
 import authRoutes from './routes/auth.js';
@@ -16,43 +14,74 @@ import adminRoutes from './routes/admin.js';
 import userRoutes from './routes/users.js';
 
 dotenv.config();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ Security
+/* ================================
+   ✅ SECURITY MIDDLEWARE
+================================ */
+
+// Helmet
 app.use(helmet());
+
+// ✅ CORS (FIXED)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://smart-waste-management-for-sustaina-beryl.vercel.app"
+];
+
 app.use(
   cors({
-    origin: process.env.NODE_ENV === 'production' ? false : 'http://localhost:5173',
+    origin: function (origin, callback) {
+      // allow requests with no origin (mobile apps, postman)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
 
-// ✅ Rate Limiter
+// ✅ Handle Preflight Requests
+app.options('*', cors());
+
+/* ================================
+   ✅ RATE LIMITER
+================================ */
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many requests, try again later.',
 });
+
 app.use('/api', limiter);
 
-// ✅ Body Parsing
+/* ================================
+   ✅ BODY PARSING
+================================ */
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ✅ Serve uploads
+/* ================================
+   ✅ MONGODB CONNECTION
+================================ */
 
-
-// ✅ MongoDB Connection
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
   .catch((err) => console.error('❌ MongoDB error:', err));
 
-// ✅ Routes
+/* ================================
+   ✅ ROUTES
+================================ */
+
 app.use('/api/auth', authRoutes);
 app.use('/api/waste', wasteRoutes);
 app.use('/api/training', trainingRoutes);
@@ -60,7 +89,10 @@ app.use('/api/facilities', facilityRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 
-// ✅ Health Check
+/* ================================
+   ✅ HEALTH CHECK
+================================ */
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -69,18 +101,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ Error Handler
-app.use(
-  cors({
-    origin: [
-      'http://localhost:5173',
-      'https://smart-waste-management-for-sustaina-beryl.vercel.app'
-    ],
-    credentials: true,
-  })
-);
+/* ================================
+   ✅ 404 HANDLER
+================================ */
 
-// ✅ 404 Handler
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -88,7 +112,10 @@ app.use('*', (req, res) => {
   });
 });
 
-// ✅ Start Server
+/* ================================
+   ✅ START SERVER
+================================ */
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
